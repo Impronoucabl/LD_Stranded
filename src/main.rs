@@ -7,20 +7,35 @@ use bevy::{
 
 /// An implementation of the classic game "Breakout"
 const TIME_STEP: f32 = 1.0 / 60.0;
+pub const RESOLUTION: f32 = 16.0/9.0;
+
 fn main() {
+    let height = 900.0;
     App::new()
+        .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.9)))
+        .insert_resource(WindowDescriptor {
+            width: height*RESOLUTION,
+            height: height,
+            title: String::from("LD Stranded"),
+            vsync: true,
+            resizable: false,
+            ..Default::default()
+        })
         .add_plugins(DefaultPlugins)
         .insert_resource(Scoreboard { score: 0 })
-        .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.9)))
-        .add_startup_system(setup)
-        .add_system_set(
+        .add_startup_system_to_stage(StartupStage::PreStartup, load_tiles)
+        //.add_startup_system(setup)
+        .add_startup_system(spawn_camera)
+        .add_startup_system(spawn_player)
+        /* .add_system_set(
             SystemSet::new()
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64))
                 .with_system(paddle_movement_system)
                 .with_system(ball_collision_system)
                 .with_system(ball_movement_system),
         )
-        .add_system(scoreboard_system)
+        */
+        //.add_system(scoreboard_system)
         .add_system(bevy::input::system::exit_on_esc_system)
         .run();
 }
@@ -45,12 +60,62 @@ enum Collider {
 struct Scoreboard {
     score: usize,
 }
+fn spawn_camera(mut commands: Commands) {
+    let mut camera = OrthographicCameraBundle::new_2d();
+    camera.orthographic_projection.top = 1.0;
+    camera.orthographic_projection.bottom = -1.0;
+
+    camera.orthographic_projection.right = 1.0 * RESOLUTION;
+    camera.orthographic_projection.left = -1.0 * RESOLUTION;
+
+    //camera.orthographic_projection.scaling_mode = ScalingMode::None;
+    commands.spawn_bundle(camera);
+}
+
+struct Tilemap(Handle<TextureAtlas>);
+
+fn load_tiles(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+){
+    let image = assets.load("tileset x3.png");
+    let atlas = TextureAtlas::from_grid_with_padding(
+        image,
+        Vec2::splat(9.0),
+        16,
+        16,
+        Vec2::splat(2.0)
+    );
+    let atlas_handle = texture_atlases.add(atlas);
+
+    commands.insert_resource(Tilemap(atlas_handle))
+}
+
+fn spawn_player(mut commands: Commands, tiles: Res<Tilemap>) {
+    let mut sprite = TextureAtlasSprite::new(1);
+    sprite.custom_size = Some(Vec2::splat(1.0));
+
+    commands
+        .spawn_bundle(SpriteSheetBundle {
+            sprite: sprite,
+            texture_atlas: tiles.0.clone(),
+            transform: Transform {
+                translation: Vec3::new(0.0,0.0,900.0), 
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .insert(Name::new("Player"));
+}
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Add the game's entities to our world
 
     // cameras
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    //commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    
+    
     commands.spawn_bundle(UiCameraBundle::default());
     // paddle
     commands
@@ -241,6 +306,16 @@ fn paddle_movement_system(
     translation.x += direction * paddle.speed * TIME_STEP;
     // bound the paddle within the walls
     translation.x = translation.x.min(380.0).max(-380.0);
+
+    if keyboard_input.pressed(KeyCode::Up) {
+        translation.y += paddle.speed * TIME_STEP;
+    }
+    if keyboard_input.pressed(KeyCode::Down) {
+        translation.y -= paddle.speed * TIME_STEP;
+    }
+    translation.y = translation.y.min(210.0).max(-190.0);
+
+
 }
 
 fn ball_movement_system(mut ball_query: Query<(&Ball, &mut Transform)>) {
