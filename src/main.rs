@@ -1,18 +1,16 @@
 
-use bevy::{
-    core::FixedTimestep,
-    prelude::*,
-    sprite::collide_aabb::{collide, Collision},
-};
+use bevy::prelude::*;
+use bevy_ecs_tilemap::prelude::*;
+
+mod helpers;
 
 /// An implementation of the classic game "Breakout"
-const TIME_STEP: f32 = 1.0 / 60.0;
 pub const RESOLUTION: f32 = 16.0/9.0;
 
 fn main() {
     let height = 900.0;
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.9)))
+        .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.6)))
         .insert_resource(WindowDescriptor {
             width: height*RESOLUTION,
             height: height,
@@ -22,11 +20,16 @@ fn main() {
             ..Default::default()
         })
         .add_plugins(DefaultPlugins)
+        .add_plugin(TilemapPlugin)
         .insert_resource(Scoreboard { score: 0 })
-        .add_startup_system_to_stage(StartupStage::PreStartup, load_tiles)
-        //.add_startup_system(setup)
         .add_startup_system(spawn_camera)
-        .add_startup_system(spawn_player)
+        .add_startup_system(startfn)
+        .add_system(helpers::camera::movement)
+        .add_system(helpers::texture::set_texture_filters_to_nearest)
+        //.add_startup_system_to_stage(StartupStage::PreStartup, load_tiles)
+        //.add_startup_system(setup)
+        
+        //.add_startup_system(spawn_player)
         /* .add_system_set(
             SystemSet::new()
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64))
@@ -72,6 +75,48 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn_bundle(camera);
 }
 
+fn startfn(mut commands: Commands,asset_server: Res<AssetServer>,mut map_query: MapQuery){
+    let texture_handle = asset_server.load("tileset x1.png");
+
+    let map_entitity = commands.    spawn().id();
+    let mut map = Map::new(0u16, map_entitity);
+    let (mut layer_builder, _) = LayerBuilder::new(
+        &mut commands,
+        LayerSettings::new(
+            MapSize(8,4),
+            ChunkSize(6,6),
+            TileSize(32.0,32.0),
+            TextureSize(1184.0,736.0),
+        ),
+        0u16,
+        0u16,
+    );
+    layer_builder.set_all(TileBundle{
+        tile: Tile{
+            texture_index: 6,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let _ = layer_builder.set_tile(TilePos(3,4), 
+        TileBundle {
+            tile: Tile {
+                texture_index:9, 
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    let layer_entity = map_query.build_layer(&mut commands, layer_builder, texture_handle);
+    map.add_layer(&mut commands, 0u16, layer_entity);
+    commands
+        .entity(map_entitity)
+        .insert(map)
+        .insert(Transform::from_xyz(-768.0, -352.0, 0.0))
+        .insert(GlobalTransform::default());
+}
+/*
+
 struct Tilemap(Handle<TextureAtlas>);
 
 fn load_tiles(
@@ -80,21 +125,20 @@ fn load_tiles(
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
 ){
     let image = assets.load("tileset x3.png");
-    let atlas = TextureAtlas::from_grid_with_padding(
+    let atlas = TextureAtlas::from_grid(
         image,
-        Vec2::splat(9.0),
-        16,
-        16,
-        Vec2::splat(2.0)
+        Vec2::splat(96.0),
+        36,
+        22
     );
     let atlas_handle = texture_atlases.add(atlas);
 
     commands.insert_resource(Tilemap(atlas_handle))
 }
-
+*/
+/*
 fn spawn_player(mut commands: Commands, tiles: Res<Tilemap>) {
-    let mut sprite = TextureAtlasSprite::new(1);
-    sprite.custom_size = Some(Vec2::splat(1.0));
+    let sprite = TextureAtlasSprite::new(8);
 
     commands
         .spawn_bundle(SpriteSheetBundle {
@@ -108,7 +152,7 @@ fn spawn_player(mut commands: Commands, tiles: Res<Tilemap>) {
         })
         .insert(Name::new("Player"));
 }
-
+*/
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Add the game's entities to our world
 
@@ -286,7 +330,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         }
     }
 }
-
+/*
 fn paddle_movement_system(
     keyboard_input: Res<Input<KeyCode>>,
     mut query: Query<(&Paddle, &mut Transform)>,
@@ -316,18 +360,18 @@ fn paddle_movement_system(
     translation.y = translation.y.min(210.0).max(-190.0);
 
 
-}
-
+}*/
+/*
 fn ball_movement_system(mut ball_query: Query<(&Ball, &mut Transform)>) {
     let (ball, mut transform) = ball_query.single_mut();
     transform.translation += ball.velocity * TIME_STEP;
 }
-
+*/
 fn scoreboard_system(scoreboard: Res<Scoreboard>, mut query: Query<&mut Text>) {
     let mut text = query.single_mut();
     text.sections[1].value = format!("{}", scoreboard.score);
 }
-
+/*
 fn ball_collision_system(
     mut commands: Commands,
     mut scoreboard: ResMut<Scoreboard>,
@@ -383,4 +427,4 @@ fn ball_collision_system(
             }
         }
     }
-}
+}*/
