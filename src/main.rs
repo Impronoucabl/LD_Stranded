@@ -10,7 +10,7 @@ pub const RESOLUTION: f32 = 16.0/9.0;
 fn main() {
     let height = 900.0;
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.6)))
+        .insert_resource(ClearColor(Color::rgb(0.1, 0.1, 0.1)))
         .insert_resource(WindowDescriptor {
             width: height*RESOLUTION,
             height: height,
@@ -23,41 +23,16 @@ fn main() {
         .add_plugin(TilemapPlugin)
         .insert_resource(Scoreboard { score: 0 })
         .add_startup_system(spawn_camera)
-        .add_startup_system(startfn)
+        .add_startup_system(spawn_tiles)
+        .add_startup_system(spawn_resources)
+        .add_system(diffusion_system)
         .add_system(helpers::camera::movement)
         .add_system(helpers::texture::set_texture_filters_to_nearest)
-        //.add_startup_system_to_stage(StartupStage::PreStartup, load_tiles)
-        //.add_startup_system(setup)
         
         //.add_startup_system(spawn_player)
-        /* .add_system_set(
-            SystemSet::new()
-                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64))
-                .with_system(paddle_movement_system)
-                .with_system(ball_collision_system)
-                .with_system(ball_movement_system),
-        )
-        */
         //.add_system(scoreboard_system)
         .add_system(bevy::input::system::exit_on_esc_system)
         .run();
-}
-
-#[derive(Component)]
-struct Paddle {
-    speed: f32,
-}
-
-#[derive(Component)]
-struct Ball {
-    velocity: Vec3,
-}
-
-#[derive(Component)]
-enum Collider {
-    Solid,
-    Scorable,
-    Paddle,
 }
 
 struct Scoreboard {
@@ -75,67 +50,211 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn_bundle(camera);
 }
 
-fn startfn(mut commands: Commands,asset_server: Res<AssetServer>,mut map_query: MapQuery){
+fn spawn_tiles(mut commands: Commands,asset_server: Res<AssetServer>,mut map_query: MapQuery){
     let texture_handle = asset_server.load("tileset x1.png");
 
-    let map_entitity = commands.    spawn().id();
+    let map_entitity = commands.spawn().id();
     let mut map = Map::new(0u16, map_entitity);
-    let (mut layer_builder, _) = LayerBuilder::new(
+    let layer_settings = LayerSettings::new(
+        MapSize(8,4),
+        ChunkSize(6,6),
+        TileSize(32.0,32.0),
+        TextureSize(1184.0,736.0),
+    );
+    //floor tiles 
+    let (mut floor, floor_entitity) = LayerBuilder::new(
         &mut commands,
-        LayerSettings::new(
-            MapSize(8,4),
-            ChunkSize(6,6),
-            TileSize(32.0,32.0),
-            TextureSize(1184.0,736.0),
-        ),
+        layer_settings.clone(),
         0u16,
         0u16,
     );
-    layer_builder.set_all(TileBundle{
+    floor.set_all(TileBundle{
         tile: Tile{
-            texture_index: 6,
+            texture_index: 71,
             ..Default::default()
         },
         ..Default::default()
     });
-    let _ = layer_builder.set_tile(TilePos(3,4), 
+    map.add_layer(&mut commands, 0u16, floor_entitity);
+    map_query.build_layer(&mut commands, floor, texture_handle.clone());
+    //bounding walls
+    let (mut walls, wall_entitity) = LayerBuilder::new(
+        &mut commands,
+        layer_settings.clone(),
+        0u16,
+        2,
+    );// top
+    for n in 0..47 {
+        let _ = walls.set_tile(TilePos(n,23), 
+            TileBundle {
+                tile: Tile {
+                    texture_index:5, 
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );//bottom
+        let _ = walls.set_tile(TilePos(n,0), 
+            TileBundle {
+                tile: Tile {
+                    texture_index:375, 
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+    }//left
+    for n in 0..23 {
+        let _ = walls.set_tile(TilePos(0,n), 
+            TileBundle {
+                tile: Tile {
+                    texture_index:75, 
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );//right
+        let _ = walls.set_tile(TilePos(47,n), 
+            TileBundle {
+                tile: Tile {
+                    texture_index:83, 
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+    }//corners
+    let _ = walls.set_tile(TilePos(0,23), 
         TileBundle {
             tile: Tile {
-                texture_index:9, 
+                texture_index:2, 
                 ..Default::default()
             },
             ..Default::default()
         },
     );
-    let layer_entity = map_query.build_layer(&mut commands, layer_builder, texture_handle);
-    map.add_layer(&mut commands, 0u16, layer_entity);
+    let _ = walls.set_tile(TilePos(47,23), 
+        TileBundle {
+            tile: Tile {
+                texture_index:8, 
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    let _ = walls.set_tile(TilePos(0,0), 
+        TileBundle {
+            tile: Tile {
+                texture_index:372, 
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    let _ = walls.set_tile(TilePos(47,0), 
+        TileBundle {
+            tile: Tile {
+                texture_index:378, 
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    map_query.build_layer(&mut commands, walls, texture_handle.clone());
+    map.add_layer(&mut commands, 2, wall_entitity);
+    //spawn everything
     commands
         .entity(map_entitity)
         .insert(map)
         .insert(Transform::from_xyz(-768.0, -352.0, 0.0))
         .insert(GlobalTransform::default());
 }
-/*
 
-struct Tilemap(Handle<TextureAtlas>);
+#[derive(Component, Copy, Clone)]
+struct TileResources {air: f32, water: f32, fire:f32}
 
-fn load_tiles(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-){
-    let image = assets.load("tileset x3.png");
-    let atlas = TextureAtlas::from_grid(
-        image,
-        Vec2::splat(96.0),
-        36,
-        22
-    );
-    let atlas_handle = texture_atlases.add(atlas);
-
-    commands.insert_resource(Tilemap(atlas_handle))
+fn spawn_resources(mut commands: Commands) {
+    for n in 0..47 {
+        for m in 0..23 {
+            commands.spawn()
+                .insert(TileResources{air:1.0, water:0.0, fire:0.0})
+                .insert(TilePos(n,m));
+        }
+    }
 }
-*/
+
+fn diffusion_system(mut resource_query: Query<(&mut TileResources, &TilePos)>) {
+    for x0 in 0..47 {
+        for y0 in 0..23 { 
+            let mut tot_air = 0.0;
+            let mut tot_h2o = 0.0;
+            let mut tot_fir = 0.0;
+            let mut tile_count = 0.0;
+            for (res, tile_pos2) in resource_query.iter() {
+                let mut count = 0;
+                if x0 == 0||x0 == 47 {
+                    count += 3;
+                }
+                if y0 == 0 || y0 == 24 {
+                    count += 3;
+                }
+                count = count.min(5);
+                let mut west = false;
+                let mut east = false;
+                let mut north = false;
+                let mut south = false;
+                if tile_pos2.0 < x0 {
+                    if x0 - tile_pos2.0 == 1 {
+                        west = true;
+                    }
+                } else if tile_pos2.0 > x0 {
+                    if tile_pos2.0 - x0 == 1 {
+                        east = true;
+                    }
+                } else {
+                    east = true;
+                    west = true;
+                }
+                if tile_pos2.1 < y0 {
+                    if y0 - tile_pos2.1 == 1 {
+                        north = true;
+                    }
+                } else if tile_pos2.1 > y0 {
+                    if tile_pos2.1 - y0 == 1 {
+                        south = true;
+                    }
+                } else {
+                    north = true;
+                    south = true;
+                }
+                if north && east && south && west {
+                    tot_air += res.air;
+                    tot_h2o += res.water;
+                    tot_fir += res.fire;
+                    count += 1;
+                    tile_count += 1f32;
+                } else if north || east || south || west {
+                    //aggregate surrounding tiles
+                    tot_air += res.air;
+                    tot_h2o += res.water;
+                    tot_fir += res.fire;
+                    count += 1;
+                    tile_count += 1f32;
+                }
+                if count >= 9 {
+                    break
+                }
+            }
+            for (mut res, tile_pos2) in resource_query.iter_mut() {
+                if tile_pos2.0 == x0 && tile_pos2.1 == y0 {
+                    res.air = tot_air/tile_count;
+                    res.water = tot_h2o/tile_count;
+                    res.fire = tot_fir/tile_count;
+                }
+            } 
+        }
+    }
+}
 /*
 fn spawn_player(mut commands: Commands, tiles: Res<Tilemap>) {
     let sprite = TextureAtlasSprite::new(8);
@@ -161,39 +280,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     
     
     commands.spawn_bundle(UiCameraBundle::default());
-    // paddle
-    commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(0.0, -215.0, 0.0),
-                scale: Vec3::new(120.0, 30.0, 0.0),
-                ..Default::default()
-            },
-            sprite: Sprite {
-                color: Color::rgb(0.5, 0.5, 1.0),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(Paddle { speed: 500.0 })
-        .insert(Collider::Paddle);
-    // ball
-    commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                scale: Vec3::new(30.0, 30.0, 0.0),
-                translation: Vec3::new(0.0, -50.0, 1.0),
-                ..Default::default()
-            },
-            sprite: Sprite {
-                color: Color::rgb(1.0, 0.5, 0.5),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(Ball {
-            velocity: 400.0 * Vec3::new(0.5, -0.5, 0.0).normalize(),
-        });
     // scoreboard
     commands.spawn_bundle(TextBundle {
         text: Text {
@@ -228,107 +314,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         ..Default::default()
     });
-
-    // Add walls
-    let wall_color = Color::rgb(0.8, 0.8, 0.8);
-    let wall_thickness = 10.0;
-    let bounds = Vec2::new(900.0, 600.0);
-
-    // left
-    commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(-bounds.x / 2.0, 0.0, 0.0),
-                scale: Vec3::new(wall_thickness, bounds.y + wall_thickness, 1.0),
-                ..Default::default()
-            },
-            sprite: Sprite {
-                color: wall_color,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-    // right
-    commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(bounds.x / 2.0, 0.0, 0.0),
-                scale: Vec3::new(wall_thickness, bounds.y + wall_thickness, 1.0),
-                ..Default::default()
-            },
-            sprite: Sprite {
-                color: wall_color,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-    // bottom
-    commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(0.0, -bounds.y / 2.0, 0.0),
-                scale: Vec3::new(bounds.x + wall_thickness, wall_thickness, 1.0),
-                ..Default::default()
-            },
-            sprite: Sprite {
-                color: wall_color,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-    // top
-    commands
-        .spawn_bundle(SpriteBundle {
-            transform: Transform {
-                translation: Vec3::new(0.0, bounds.y / 2.0, 0.0),
-                scale: Vec3::new(bounds.x + wall_thickness, wall_thickness, 1.0),
-                ..Default::default()
-            },
-            sprite: Sprite {
-                color: wall_color,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .insert(Collider::Solid);
-
-    // Add bricks
-    let brick_rows = 4;
-    let brick_columns = 5;
-    let brick_spacing = 20.0;
-    let brick_size = Vec3::new(150.0, 30.0, 1.0);
-    let bricks_width = brick_columns as f32 * (brick_size.x + brick_spacing) - brick_spacing;
-    // center the bricks and move them up a bit
-    let bricks_offset = Vec3::new(-(bricks_width - brick_size.x) / 2.0, 100.0, 0.0);
-    let brick_color = Color::rgb(0.5, 0.5, 1.0);
-    for row in 0..brick_rows {
-        let y_position = row as f32 * (brick_size.y + brick_spacing);
-        for column in 0..brick_columns {
-            let brick_position = Vec3::new(
-                column as f32 * (brick_size.x + brick_spacing),
-                y_position,
-                0.0,
-            ) + bricks_offset;
-            // brick
-            commands
-                .spawn_bundle(SpriteBundle {
-                    sprite: Sprite {
-                        color: brick_color,
-                        ..Default::default()
-                    },
-                    transform: Transform {
-                        translation: brick_position,
-                        scale: brick_size,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .insert(Collider::Scorable);
-        }
-    }
 }
 /*
 fn paddle_movement_system(
@@ -427,4 +412,5 @@ fn ball_collision_system(
             }
         }
     }
-}*/
+}
+*/
